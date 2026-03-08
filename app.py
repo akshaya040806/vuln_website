@@ -1,4 +1,5 @@
-from flask import Flask, request, render_template, redirect, render_template_stringimport sqlite3
+from flask import Flask, request, render_template, redirect, render_template_string
+import sqlite3
 import os
 import subprocess
 
