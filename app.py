@@ -1,5 +1,4 @@
-from flask import Flask, request, render_template, redirect
-import sqlite3
+from flask import Flask, request, render_template, redirect, render_template_stringimport sqlite3
 import os
 import subprocess
 
@@ -52,19 +51,21 @@ def login():
         username = request.form.get("username")
         password = request.form.get("password")
 
-        conn = sqlite3.connect(DATABASE)
+        conn = sqlite3.connect("users.db")
         cursor = conn.cursor()
 
-        # INTENTIONALLY VULNERABLE QUERY
-        query = f"SELECT * FROM users WHERE username='{username}' AND password='{password}'"
-        result = cursor.execute(query).fetchone()
+        try:
+            # Intentionally vulnerable query
+            query = "SELECT * FROM users WHERE username='" + username + "' AND password='" + password + "'"
+            result = cursor.execute(query).fetchone()
 
-        conn.close()
+            if result:
+                return "Login successful"
+            else:
+                return "Invalid credentials"
 
-        if result:
-            return f"Welcome {username}"
-        else:
-            return "Login failed"
+        except Exception as e:
+            return str(e)  # exposes SQL errors
 
     return render_template("login.html")
 
@@ -110,12 +111,11 @@ def ping():
 # -------------------------
 @app.route("/ssti")
 def ssti():
-
     name = request.args.get("name")
 
     if name:
-        template = f"Hello {name}"
-        return template
+        template = "Hello " + name
+        return render_template_string(template)
 
     return """
     <form>
@@ -167,11 +167,8 @@ def open_redirect():
     """
 
 
-# -------------------------
-# RENDER DEPLOYMENT CONFIG
-# -------------------------
 if __name__ == "__main__":
-
     port = int(os.environ.get("PORT", 10000))
-
     app.run(host="0.0.0.0", port=port)
+
+
