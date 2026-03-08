@@ -1,135 +1,177 @@
 from flask import Flask, request, render_template, redirect
 import sqlite3
 import os
+import subprocess
 
 app = Flask(__name__)
 
-DB = "users.db"
+DATABASE = "users.db"
 
+
+# -------------------------
+# DATABASE SETUP
+# -------------------------
 def init_db():
-    if not os.path.exists(DB):
-        conn = sqlite3.connect(DB)
-        c = conn.cursor()
-        c.execute("CREATE TABLE users (username TEXT, password TEXT)")
-        c.execute("INSERT INTO users VALUES ('admin','admin123')")
-        c.execute("INSERT INTO users VALUES ('test','test123')")
-        conn.commit()
-        conn.close()
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT,
+        password TEXT
+    )
+    """)
+
+    cursor.execute("INSERT INTO users (username,password) VALUES ('admin','admin123')")
+    cursor.execute("INSERT INTO users (username,password) VALUES ('user','password')")
+
+    conn.commit()
+    conn.close()
+
 
 init_db()
 
+
+# -------------------------
+# HOME
+# -------------------------
 @app.route("/")
 def home():
     return render_template("index.html")
 
 
-# -------------------------------
-# SQL Injection Vulnerability
-# -------------------------------
-
-@app.route("/login", methods=["GET","POST"])
+# -------------------------
+# SQL INJECTION VULNERABILITY
+# -------------------------
+@app.route("/login", methods=["GET", "POST"])
 def login():
 
     if request.method == "POST":
 
-        username = request.form["username"]
-        password = request.form["password"]
+        username = request.form.get("username")
+        password = request.form.get("password")
 
-        conn = sqlite3.connect(DB)
-        c = conn.cursor()
+        conn = sqlite3.connect(DATABASE)
+        cursor = conn.cursor()
 
-        # INTENTIONALLY VULNERABLE
+        # INTENTIONALLY VULNERABLE QUERY
         query = f"SELECT * FROM users WHERE username='{username}' AND password='{password}'"
+        result = cursor.execute(query).fetchone()
 
-        result = c.execute(query).fetchone()
+        conn.close()
 
         if result:
             return f"Welcome {username}"
         else:
-            return "Invalid login"
+            return "Login failed"
 
     return render_template("login.html")
 
 
-# -------------------------------
-# XSS Vulnerability
-# -------------------------------
-
+# -------------------------
+# XSS VULNERABILITY
+# -------------------------
 @app.route("/search")
 def search():
 
-    q = request.args.get("q","")
+    query = request.args.get("q")
 
-    return f"<h2>Results for {q}</h2>"
+    if query:
+        return f"Search results for: {query}"
+
+    return render_template("search.html")
 
 
-# -------------------------------
-# Command Injection
-# -------------------------------
-
+# -------------------------
+# COMMAND INJECTION
+# -------------------------
 @app.route("/ping")
 def ping():
 
-    ip = request.args.get("ip")
+    host = request.args.get("host")
 
-    result = os.popen(f"ping -c 1 {ip}").read()
+    if host:
+        command = f"ping -c 1 {host}"
+        output = subprocess.getoutput(command)
 
-    return f"<pre>{result}</pre>"
+        return f"<pre>{output}</pre>"
 
-
-# -------------------------------
-# SSTI Vulnerability
-# -------------------------------
-
-@app.route("/hello")
-def hello():
-
-    name = request.args.get("name","guest")
-
-    template = f"""
-    <h1>Hello {name}</h1>
+    return """
+    <form>
+        Host: <input name='host'>
+        <input type='submit'>
+    </form>
     """
 
-    return render_template_string(template)
+
+# -------------------------
+# SSTI VULNERABILITY
+# -------------------------
+@app.route("/ssti")
+def ssti():
+
+    name = request.args.get("name")
+
+    if name:
+        template = f"Hello {name}"
+        return template
+
+    return """
+    <form>
+        Name: <input name='name'>
+        <input type='submit'>
+    </form>
+    """
 
 
-# -------------------------------
-# File Inclusion
-# -------------------------------
+# -------------------------
+# DIRECTORY TRAVERSAL
+# -------------------------
+@app.route("/read")
+def read_file():
 
-@app.route("/file")
-def file():
+    filename = request.args.get("file")
 
-    filename = request.args.get("name")
+    if filename:
+        try:
+            with open(filename, "r") as f:
+                return f"<pre>{f.read()}</pre>"
+        except:
+            return "File not found"
 
-    try:
-        with open(filename) as f:
-            return f.read()
-    except:
-        return "File not found"
+    return """
+    <form>
+        File path: <input name='file'>
+        <input type='submit'>
+    </form>
+    """
 
 
-# -------------------------------
-# Open Redirect
-# -------------------------------
-
+# -------------------------
+# OPEN REDIRECT
+# -------------------------
 @app.route("/redirect")
-def redir():
+def open_redirect():
 
     url = request.args.get("url")
 
-    return redirect(url)
+    if url:
+        return redirect(url)
+
+    return """
+    <form>
+        URL: <input name='url'>
+        <input type='submit'>
+    </form>
+    """
 
 
-# -------------------------------
-# Debug Info Leak
-# -------------------------------
-
-@app.route("/debug")
-def debug():
-
-    return str(os.environ)
-
-
+# -------------------------
+# RENDER DEPLOYMENT CONFIG
+# -------------------------
 if __name__ == "__main__":
-    app.run(debug=True)
+
+    port = int(os.environ.get("PORT", 10000))
+
+    app.run(host="0.0.0.0", port=port)
